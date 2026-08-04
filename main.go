@@ -1,10 +1,13 @@
 package main
 
 import (
+	"log"
 	"net/http"
 
+	"dgo.baisic.print/GIN/dao"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 var booklist = make([]book, 0)
@@ -99,7 +102,21 @@ func delete(c *gin.Context) {
 	booklist = newbooklist
 	success(c, nil)
 }
+func initDB() *gorm.DB {
+	dsn := "root:123456@tcp(127.0.0.1:3306)/testdb?charset=utf8mb4&parseTime=True&loc=Asia/Shanghai"
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Fatal("数据库连接失败", err)
+	}
+	// 自动建表
+	db.AutoMigrate(&model.User{})
+	return db
+}
 func main() {
+	//1.初始化mysql + GORM
+	db := initDB()
+	//2.把db注入dao层，所有dao共用一个连接池
+	dao.InitDao(db)
 	r := gin.Default()
 
 	bookroute := r.Group("/books")
