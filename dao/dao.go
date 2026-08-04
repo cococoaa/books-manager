@@ -1,9 +1,8 @@
 package dao
 
 import (
-	"project/model"
-
 	"dgo.baisic.print/GIN/model"
+
 	"gorm.io/gorm"
 )
 
@@ -14,14 +13,31 @@ func InitDao(database *gorm.DB) {
 	db = database
 }
 
-// 根据用户名查询用户
+// 根据ID查询图书
 func GetBookById(ID string) (*model.Book, error) {
 	var b model.Book
-	err := db.Where("ID = ?", ID).First(&b).Error
+	err := db.Where("id = ?", ID).First(&b).Error
 	return &b, err
 }
 
-// 创建用户
-func createBook(book *model.Book) error {
+// 查询全部图书
+func GetAllBooks() ([]model.Book, error) {
+	var books []model.Book
+	err := db.Find(&books).Error
+	return books, err
+}
+
+// 新增图书
+func CreateBook(book *model.Book) error {
 	return db.Create(book).Error
+}
+
+// 更新图书
+func UpdateBook(book *model.Book) error {
+	return db.Save(book).Error
+}
+
+// 删除图书
+func DeleteBook(ID string) error {
+	return db.Where("id = ?", ID).Delete(&model.Book{}).Error
 }

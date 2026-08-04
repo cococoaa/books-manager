@@ -5,23 +5,17 @@ import (
 	"net/http"
 
 	"dgo.baisic.print/GIN/dao"
+	"dgo.baisic.print/GIN/model"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
-
-var booklist = make([]book, 0)
 
 type Response struct {
 	Code int         `json:"code"`
 	Msg  string      `json:"msg"`
-	Data interface{} `josn:"data"`
-}
-type book struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"binding:"required"`
-	Author string `json:"author"binding:"required"`
-	Year   int    `json:"year" binding:"required,min=1,max=2026"`
+	Data interface{} `json:"data"`
 }
 
 func success(c *gin.Context, data any) {
@@ -31,6 +25,7 @@ func success(c *gin.Context, data any) {
 		Data: data,
 	})
 }
+
 func Fail(c *gin.Context, code int, msg string) {
 	c.JSON(200, Response{
 		Code: code,
@@ -38,85 +33,92 @@ func Fail(c *gin.Context, code int, msg string) {
 		Data: nil,
 	})
 }
+
 func create(c *gin.Context) {
-	var req book
-	err := c.ShouldBindJSON(&req)
-	if err != nil {
-		Fail(c, 400, "参数效验失败"+err.Error())
+	var req model.Book
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Fail(c, 400, "参数校验失败: "+err.Error())
 		return
 	}
 	req.ID = uuid.NewString()
-	booklist = append(booklist, req)
+	if err := dao.CreateBook(&req); err != nil {
+		Fail(c, 500, "新增图书失败: "+err.Error())
+		return
+	}
 	success(c, req)
 }
+
 func renew(c *gin.Context) {
 	id := c.Param("id")
-	var req book
-	if err := c.ShouldBindJSON(&req); err != nil {
-		Fail(c, 400, "参数错误"+err.Error())
-		return
-	}
-	find := false
-	for i, item := range booklist {
-		if item.ID == id {
-			req.ID = id
-			booklist[i] = req
-			find = true
-			break
-		}
-	}
-	if !find {
+	book, err := dao.GetBookById(id)
+	if err != nil {
 		Fail(c, 400, "图书不存在")
 		return
 	}
-	success(c, req)
+	var req model.Book
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Fail(c, 400, "参数错误: "+err.Error())
+		return
+	}
+	book.Title = req.Title
+	book.Author = req.Author
+	book.Year = req.Year
+	if err := dao.UpdateBook(book); err != nil {
+		Fail(c, 500, "更新图书失败: "+err.Error())
+		return
+	}
+	success(c, book)
 }
+
 func getbooklist(c *gin.Context) {
-	success(c, booklist)
+	books, err := dao.GetAllBooks()
+	if err != nil {
+		Fail(c, 500, "查询图书列表失败: "+err.Error())
+		return
+	}
+	success(c, books)
 }
+
 func detail(c *gin.Context) {
 	id := c.Param("id")
-	for _, item := range booklist {
-		if item.ID == id {
-			success(c, item)
-			return
-		}
-	}
-	Fail(c, 400, "图书不存在")
-}
-func delete(c *gin.Context) {
-	id := c.Param("id")
-	find := false
-	newbooklist := make([]book, 0)
-	for _, item := range booklist {
-		if item.ID != id {
-			newbooklist = append(newbooklist, item)
-		} else {
-			find = true
-		}
-	}
-	if !find {
+	book, err := dao.GetBookById(id)
+	if err != nil {
 		Fail(c, 400, "图书不存在")
 		return
 	}
-	booklist = newbooklist
+	success(c, book)
+}
+
+func deleteBook(c *gin.Context) {
+	id := c.Param("id")
+	if _, err := dao.GetBookById(id); err != nil {
+		Fail(c, 400, "图书不存在")
+		return
+	}
+	if err := dao.DeleteBook(id); err != nil {
+		Fail(c, 500, "删除图书失败: "+err.Error())
+		return
+	}
 	success(c, nil)
 }
+
 func initDB() *gorm.DB {
-	dsn := "root:123456@tcp(127.0.0.1:3306)/testdb?charset=utf8mb4&parseTime=True&loc=Asia/Shanghai"
+	dsn := "root:Zsh1314520@tcp(127.0.0.1:3306)/books?charset=utf8mb4&parseTime=True&loc=Asia%2FShanghai"
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
-		log.Fatal("数据库连接失败", err)
+		log.Fatal("数据库连接失败: ", err)
 	}
 	// 自动建表
-	db.AutoMigrate(&model.User{})
+	db.AutoMigrate(&model.Book{})
 	return db
 }
+
 func main() {
-	//1.初始化mysql + GORM
+	// 1. 初始化 mysql + GORM
 	db := initDB()
-	//2.把db注入dao层，所有dao共用一个连接池
+	// 2. 把 db 注入 dao 层，所有 dao 共用一个连接池
 	dao.InitDao(db)
+
 	r := gin.Default()
 
 	bookroute := r.Group("/books")
@@ -125,10 +127,10 @@ func main() {
 		bookroute.PUT("/:id", renew)
 		bookroute.GET("", getbooklist)
 		bookroute.GET("/:id", detail)
-		bookroute.DELETE("/:id", delete)
+		bookroute.DELETE("/:id", deleteBook)
 	}
-	err := r.Run(":8080")
-	if err != nil {
-		panic("服务启动失败：" + err.Error())
+
+	if err := r.Run(":8080"); err != nil {
+		panic("服务启动失败: " + err.Error())
 	}
 }
