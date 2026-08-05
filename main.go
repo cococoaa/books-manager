@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 
 	"dgo.baisic.print/GIN/dao"
 	"dgo.baisic.print/GIN/model"
@@ -103,7 +104,10 @@ func deleteBook(c *gin.Context) {
 }
 
 func initDB() *gorm.DB {
-	dsn := "root:Zsh1314520@tcp(127.0.0.1:3306)/books?charset=utf8mb4&parseTime=True&loc=Asia%2FShanghai"
+	dsn := os.Getenv("DB_DSN")
+	if dsn == "" {
+		dsn = "root:root@tcp(127.0.0.1:3306)/books?charset=utf8mb4&parseTime=True&loc=Asia%2FShanghai"
+	}
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Fatal("数据库连接失败: ", err)
