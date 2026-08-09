@@ -6,8 +6,8 @@ import (
 	"os"
 	"strconv"
 
-	"dgo.baisic.print/baisic/studentguanlixitong/dao"
-	"dgo.baisic.print/baisic/studentguanlixitong/model"
+	"dgo.baisic.print/GIN/student-manager/dao"
+	"dgo.baisic.print/GIN/student-manager/model"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"

@@ -1,7 +1,7 @@
 package dao
 
 import (
-	"dgo.baisic.print/baisic/studentguanlixitong/model"
+	"dgo.baisic.print/GIN/student-manager/model"
 	"gorm.io/gorm"
 )
 

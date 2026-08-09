@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"os"
 
-	"dgo.baisic.print/GIN/dao"
-	"dgo.baisic.print/GIN/model"
+	"dgo.baisic.print/GIN/book-manager/dao"
+	"dgo.baisic.print/GIN/book-manager/model"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/driver/mysql"

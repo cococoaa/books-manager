@@ -1,7 +1,7 @@
 package dao
 
 import (
-	"dgo.baisic.print/GIN/model"
+	"dgo.baisic.print/GIN/book-manager/model"
 
 	"gorm.io/gorm"
 )
