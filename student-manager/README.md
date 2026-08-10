@@ -3,7 +3,7 @@
 ## 项目结构
 
 ```
-studentguanlixitong/
+student-manager/
 ├── main.go          # 入口 + HTTP 路由 + Handler 层
 ├── model/
 │   └── mod.go       # 数据模型定义
@@ -21,7 +21,7 @@ studentguanlixitong/
 | PUT | `/students/:id` | `renew` | 更新学生 |
 | DELETE | `/students/:id` | `deleteBook` | 删除学生 |
 
-## 遇到的问题
+## 编译/语法类问题
 
 ### 1. package 名与文件夹名不一致
 
@@ -46,7 +46,6 @@ studentguanlixitong/
 ### 3. import 了两个项目的包导致冲突
 
 **文件**：`main.go`
-**错误**：
 
 ```go
 import (
@@ -57,61 +56,77 @@ import (
 )
 ```
 
-两个 `dao`、两个 `model` 导入路径不同但包名相同，编译器分不清谁是谁。本项目只保留自己的 `dao` 和 `model`。
+两个 `dao`、两个 `model` 导入路径不同但包名相同，编译器分不清谁是谁。
 
 ### 4. Gin Handler 签名错误
 
-**文件**：`main.go`
-**错误**：
-
 ```go
-func detail(id int, c *gin.Context)  { ... }
-func deleteBook(id int, c *gin.Context) { ... }
+func detail(id int, c *gin.Context)  { ... }    // ❌
+func deleteBook(id int, c *gin.Context) { ... }  // ❌
 ```
 
-Gin 的 handler 签名必须是 `func(*gin.Context)`，不能自定义参数。路由中的 `:id` 应该在函数内通过 `c.Param("id")` 获取，而不是从参数传入。
+Gin 的 handler 签名必须是 `func(*gin.Context)`，不能自定义参数。路由中的 `:id` 应该在函数内通过 `c.Param("id")` 获取。
 
 ### 5. c.Param 返回 string，DAO 需要 int
 
-**文件**：`main.go`
-**错误**：路由 `/students/:id` → `c.Param("id")` 返回字符串 `"1"`，但 `dao.GETStudentbyID(id int)` 要求 `int` 类型。
-
-**解决**：使用 `strconv.Atoi()` 转换：
-
-```go
-id, err := strconv.Atoi(c.Param("id"))
-```
+路由 `/students/:id` → `c.Param("id")` 返回字符串 `"1"`，但 `dao.GETStudentbyID(id int)` 要求 `int` 类型。使用 `strconv.Atoi()` 转换。
 
 ### 6. gorm.Model 与自定义 ID 字段重复
 
-**文件**：`model/mod.go`
-**错误**：
-
-```go
-type Student struct {
-    gorm.Model           // ← 自带 ID uint（自增主键）
-    ID    int   `gorm:"..."` // ← 又定义了一个 ID，冲突
-    ...
-}
-```
-
-`gorm.Model` 已经包含 `ID`、`CreatedAt`、`UpdatedAt`、`DeletedAt`，不需要再定义 ID。如果要用自增 ID，直接删掉自定义的 `ID` 字段即可。
+`gorm.Model` 自带 `ID uint`（自增主键），又定义了 `ID int` 导致冲突。如果要用自增 ID，直接删掉自定义的 `ID` 字段。
 
 ### 7. DSN loc 参数未 URL 编码
 
-**错误**：`loc=Asia/Shanghai` 中的 `/` 被 MySQL DSN 解析为路径分隔符，导致连接失败。
+`loc=Asia/Shanghai` 中的 `/` 被 MySQL DSN 解析为路径分隔符，改为 `loc=Asia%2FShanghai`。
 
-**解决**：`/` 改为 `%2F`：`loc=Asia%2FShanghai`。
+## 环境变量与多项目配置（重点）
 
-### 8. 密码硬编码在代码中
+这是多项目共存时最隐蔽的一类问题，也是本项目调试耗时最长的问题。
 
-**解决**：改为环境变量 `DB_DSN`，避免密码提交到 Git。
+### 8. 两个项目共用一个 `DB_DSN` 导致建表串库
 
-### 9. 根目录非 git 仓库导致 VS Code 调试编译失败
+**现象**：学生管理系统的 POST 报错 `Table 'books.students' doesn't exist`。明明代码里默认 DSN 写的是 `/students`，为什么 GORM 却往 `books` 库写？
 
-**错误**：`error obtaining VCS status`
+**排查过程**：
 
-**解决**：`.vscode/launch.json` 加 `"buildFlags": "-buildvcs=false"`。
+```
+代码默认值: /students    ← 以为是这个
+系统环境变量: (空)         ← 第 3 方案设的已删掉
+终端 $env:DB_DSN = ?     ← 之前设过，还挂在终端里！
+launch.json: DB_BOOKS_DSN + DB_STUDENTS_DSN  ← F5 能读到，终端读不到
+```
+
+**根因**：图书管理系统和学生管理系统最初都读 `DB_DSN` 这一个变量。终端里设过 `$env:DB_DSN = .../books`，学生项目启动时 `os.Getenv("DB_DSN")` 读到的还是 `books`，默认值被环境变量覆盖了。
+
+**解决**：拆成两个独立的环境变量：
+
+| 项目 | 环境变量名 | 指向 |
+|------|-----------|------|
+| book-manager | `DB_BOOKS_DSN` | `/books` |
+| student-manager | `DB_STUDENTS_DSN` | `/students` |
+
+### 9. AutoMigrate 是启动时执行，不是 POST 请求时
+
+`db.AutoMigrate(&model.Student{})` 在 `go run main.go` 那一刻就执行了，不是在收到第一个 POST 请求时。所以表建没建成，看启动日志就知道了。如果连接失败，服务直接 `log.Fatal` 退出，根本不会监听端口。
+
+### 10. 终端 go run vs F5 启动的环境变量来源不同
+
+| 启动方式 | 环境变量来源 |
+|----------|-------------|
+| F5 (VS Code) | launch.json 的 `"env": {...}` |
+| 终端 `go run` | 当前终端 `$env:XXX` + 系统环境变量 |
+
+**两者互不相干。** 在终端启动需要手动设 `$env:DB_STUDENTS_DSN="..."`，F5 则是 launch.json 自动注入。
+
+### 11. 环境变量优先级链
+
+```
+launch.json env > 终端 $env:XXX > 系统环境变量 > 代码默认值
+```
+
+一个变量被上层设过后（哪怕设错了），下层默认值永远不会生效。排查建表问题第一步先确认 `os.Getenv()` 到底读到了什么值。
+
+> **核心经验**：多项目共存时，每个项目用独立的环境变量名。先从 `os.Getenv` 返回值反向确认连到了哪个库，再查 GORM 的建表和插入行为。
 
 ## c.Param vs uuid.NewString 的取舍
 
@@ -123,4 +138,20 @@ type Student struct {
 | 安全性 | 可遍历 `1,2,3...` | 不可预测 |
 | 适用场景 | 内部系统、学习项目 | 公开 API、需要隐藏 ID 数量 |
 
-本项目使用自增 ID + `c.Param("id")`，Url 路径中的 ID 由 `gorm.Model` 自增生成，新增时不需要客户端传 ID。
+本项目使用自增 ID + `c.Param("id")`。
+
+## 项目结构（仓库级）
+
+```
+books-manager/
+├── book-manager/          ← Gin + GORM 图书管理系统
+│   ├── main.go
+│   ├── dao/dao.go
+│   └── model/model.go
+└── student-manager/       ← Gin + GORM 学生管理系统
+    ├── main.go
+    ├── dao/dao.go
+    └── model/mod.go
+
+根目录 .vscode/launch.json 配置了两个项目的环境变量
+```

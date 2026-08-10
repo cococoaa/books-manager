@@ -104,7 +104,7 @@ func deleteBook(c *gin.Context) {
 }
 
 func initDB() *gorm.DB {
-	dsn := os.Getenv("DB_DSN")
+	dsn := os.Getenv("DB_BOOKS_DSN")
 	if dsn == "" {
 		dsn = "root:root@tcp(127.0.0.1:3306)/books?charset=utf8mb4&parseTime=True&loc=Asia%2FShanghai"
 	}
