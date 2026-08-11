@@ -1,4 +1,4 @@
-# ToDoLIST — Gin 静态文件未加载问题
+# ToDoLIST — Gin + GORM + MySQL 待办清单管理系统
 
 ## 项目结构
 
@@ -15,154 +15,249 @@ ToDoLIST/
     │   └── index.html
     └── static/
         ├── css/
-        │   ├── app.8eeeaf31.css
-        │   └── chunk-vendors.57db8905.css
         ├── js/
-        │   ├── app.007f9690.js
-        │   └── chunk-vendors.ddcb6f91.js
         └── fonts/
-            ├── element-icons.535877f5.woff
-            └── element-icons.732389de.ttf
 ```
 
-## 错误现象
+## API 接口
 
-`go run main.go` 启动后，浏览器访问 `http://localhost:8080`，页面一片空白，CSS 和 JS 全部加载失败。
+| 方法 | 路径 | 处理函数 | 说明 |
+|------|------|----------|------|
+| GET | `/` | 匿名函数 | 渲染 index.html 页面 |
+| GET | `/todos` | `QueryALLTodo` | 获取全部待办 |
+| GET | `/todos/:id` | `QueryTodo` | 获取单个待办 |
+| POST | `/todos` | `CreateTodo` | 新增待办 |
+| PUT | `/todos/:id` | `RenewTodo` | 更新待办 |
+| DELETE | `/todos/:id` | `DeleteTodo` | 删除待办 |
 
-## 错误代码
+---
 
-```go
-func main() {
-    r := gin.Default()
-    r.Static("/dist/static", "static")     // ❌ 两处都错
-    r.LoadHTMLGlob("dist/templates/*")
-    r.GET("/", func(c *gin.Context) {
-        c.HTML(http.StatusOK, "index.html", nil)
-    })
-    r.Run(":8080")
-}
-```
+## 问题总结
 
-## 错误分析
+### 问题 1：package 名写错，编译器不认入口
 
-### 错误 1：本地目录路径不存在
-
-```go
-r.Static("/dist/static", "static")
-//  ↑ URL 前缀           ↑ 本地目录
-```
-
-**`r.Static(relativePath, root)` 的参数含义：**
-
-| 参数 | 说明 |
-|------|------|
-| `relativePath` | 浏览器访问的 URL 路径 |
-| `root` | 本地磁盘上的文件夹路径 |
-
-代码写的是 `"static"`，程序从 `ToDoLIST/` 目录下找 `static/` 文件夹。
-
-实际文件在 `ToDoLIST/dist/static/` 下面，多了一层 `dist/`。所以 Gin 永远找不到 CSS 和 JS 文件。
-
-### 错误 2：URL 路径与 HTML 中引用的路径不匹配
-
-index.html 里是这样引用资源的：
-
-```html
-<link href="/static/css/app.8eeeaf31.css" rel="stylesheet">
-<script src="/static/js/app.007f9690.js"></script>
-```
-
-浏览器请求的 URL 是 `/static/css/...`，但 Gin 映射的 URL 是 `/dist/static`：
-
-```
-浏览器请求:  GET /static/css/app.8eeeaf31.css   ← HTML 写的
-Gin 监听:    r.Static("/dist/static", ...)       ← 不匹配 /static
-             结果：404 找不到
-```
-
-## 正确代码
-
-```go
-func main() {
-    r := gin.Default()
-
-    // 将 /static URL 映射到本地 dist/static 目录
-    r.Static("/static", "dist/static")
-
-    // 单独映射 favicon（它在 templates 目录下，不是 static）
-    r.StaticFile("/favicon.ico", "dist/templates/favicon.ico")
-
-    // 告诉 Gin 去哪里找 HTML 模板
-    r.LoadHTMLGlob("dist/templates/*")
-
-    r.GET("/", func(c *gin.Context) {
-        c.HTML(http.StatusOK, "index.html", nil)
-    })
-
-    r.Run(":8080")
-}
-```
-
-## 关键语法讲解
-
-### `r.Static(relativePath, root)` — 静态文件服务
-
-```go
-r.Static("/static", "dist/static")
-//         ↑ URL 路径    ↑ 本地相对路径
-```
-
-当浏览器请求 `/static/css/app.css` 时，Gin 去 `dist/static/css/app.css` 读文件。
-
-**一定要两边对上：**
-
-```
-URL 请求:    /static/css/app.css
-                ↓ r.Static 匹配 /static
-本地文件:  dist/static/css/app.css
-                ↓ 根目录是 dist/static
-最终读取:     css/app.css  → 拼到 dist/static/ 后面
-```
-
-### `r.StaticFile(relativePath, filepath)` — 单个静态文件
-
-```go
-r.StaticFile("/favicon.ico", "dist/templates/favicon.ico")
-//            ↑ 浏览器请求的 URL  ↑ 本地文件路径
-```
-
-和 `r.Static` 不同，`StaticFile` 只映射一个文件。favicon 放在 `templates` 目录下，不在 `static` 里，所以需要单独处理。
-
-### `r.LoadHTMLGlob(pattern)` — 加载 HTML 模板
-
-```go
-r.LoadHTMLGlob("dist/templates/*")
-//                     ↑ 通配符，匹配目录下所有文件
-```
-
-Gin 会在启动时一次性加载所有匹配的 HTML 文件到内存，`c.HTML()` 时直接渲染。
-
-### `c.HTML(code, name, data)` — 渲染 HTML 模板
-
-```go
-c.HTML(http.StatusOK,   // HTTP 状态码
-       "index.html",    // 模板文件名（LoadHTMLGlob 加载的）
-       nil)             // 模板数据，没有时传 nil
-```
-
-## 排查静态文件 404 的口诀
-
-```
-1. 浏览器 F12 → Network 看哪个文件 404
-2. 404 的 URL 路径是什么？→ 核对 r.Static 的 relativePath
-3. 本地文件在哪个目录？→ 核对 r.Static 的 root
-4. HTML 里引用的路径和你 Gin 映射的路径对上了吗？
-```
-
-## 补充：之前还遇到了 package 名写错的问题
+**错误代码：**
 
 ```go
 package todolist   // ❌ 入口文件必须是 package main
 ```
 
-Go 编译器只会从 `package main` 里找 `func main()` 作为程序入口。文件夹里所有 `.go` 文件可以有不同的 package，但必须有一个 `package main` 包含 `func main()`。
+**错误信息：**
+
+```
+package command-line-arguments is not a main package
+```
+
+Go 编译器只会从 `package main` 里找 `func main()`。文件夹名可以随便取，但入口文件的 `package` 必须是 `main`。
+
+**修正：**
+
+```go
+package main
+```
+
+---
+
+### 问题 2：静态文件路径两处都错，页面空白
+
+**错误代码：**
+
+```go
+r.Static("/dist/static", "static")
+```
+
+**问题分析：**
+
+`r.Static(URL路径, 本地目录)` 两个参数都有问题：
+
+| 参数 | 错误值 | 为什么错 |
+|------|--------|----------|
+| URL 路径 | `/dist/static` | HTML 里引用的是 `/static/css/...`，不匹配 |
+| 本地目录 | `"static"` | 文件在 `dist/static/` 下，少了一层 `dist/` |
+
+浏览器根据 HTML 里 `<link href="/static/css/app.css">` 请求 `/static/css/...`，但 Gin 没映射 `/static`，返回 404。即便映射对了，本地目录 `static/` 也不存在。
+
+**修正：**
+
+```go
+r.Static("/static", "dist/static")   // URL /static → 本地 dist/static
+r.StaticFile("/favicon.ico", "dist/templates/favicon.ico")
+```
+
+---
+
+### 问题 3：launch.json 的 JSON 格式错误（缺逗号）
+
+**错误代码：**
+
+```json
+"env": {
+    "DB_BOOKS_DSN": "...",
+    "DB_STUDENTS_DSN": "..."
+    "DB_TODOLIST_DSN": "..."        ← 上一行末尾缺了逗号
+}
+```
+
+JSON 里同一对象内的多个字段必须用逗号分隔。少一个逗号，VS Code 解析整个 `launch.json` 失败，F5 启动时所有配置都不生效。
+
+---
+
+### 问题 4：环境变量名还是旧的 `DB_DSN`（本次核心问题）
+
+**错误代码：**
+
+```go
+dsn := os.Getenv("DB_DSN")   // ❌ 跟图书、学生项目共用同一个变量名
+```
+
+这个错误反复出现三次了——图书系统、学生系统、ToDoLIST 最初都读 `DB_DSN`。环境变量是进程级全局的，三个项目共用一个变量名，读到的一定是同一个值，必然有人连错库：
+
+```
+终端里 $env:DB_DSN 指向 /books
+         ↓
+三个项目 os.Getenv("DB_DSN") 都读到 /books
+         ↓
+学生系统的表建到了 books 库，ToDoLIST 也是
+         ↓
+报错: Table 'books.todos' doesn't exist (表建错库了)
+```
+
+**修正：**
+
+```go
+dsn := os.Getenv("DB_TODOLIST_DSN")  // 每个项目独立命名
+```
+
+launch.json 里也要配：
+
+```json
+"env": {
+    "DB_BOOKS_DSN": "root:Zsh...@.../books?...",
+    "DB_STUDENTS_DSN": "root:Zsh...@.../students?...",
+    "DB_TODOLIST_DSN": "root:Zsh...@.../todolist?..."
+}
+```
+
+**三个项目的环境变量对照：**
+
+| 项目 | 环境变量名 | 指向库 | 表名 |
+|------|-----------|--------|------|
+| book-manager | `DB_BOOKS_DSN` | `books` | `books` |
+| student-manager | `DB_STUDENTS_DSN` | `students` | `students` |
+| ToDoLIST | `DB_TODOLIST_DSN` | `todolist` | `todos` |
+
+---
+
+### 问题 5：终端 go run vs F5 的环境变量来源不同
+
+这是多次踩坑后的核心经验：
+
+```
+终端 go run:
+  读当前终端 $env:XXX → 读系统环境变量 → 读代码默认值
+
+VS Code F5:
+  读 launch.json env → 读系统环境变量 → 读代码默认值
+```
+
+**两者互不相干。** launch.json 里配得再全，终端 `go run` 也拿不到。终端需要手动 `$env:DB_TODOLIST_DSN="..."` 或者等默认值兜底。
+
+**推荐使用 F5 启动**——launch.json 里 `"program": "${fileDirname}"` 自动切到当前文件所在目录，`env` 自动注入，一步到位。
+
+---
+
+### 问题 6：go run 的工作目录不对导致模板加载失败
+
+**错误信息：**
+
+```
+panic: html/template: pattern matches no files: `dist/templates/*`
+```
+
+**原因：** 在 `print/` 目录下执行 `go run d:/...ToDoLIST/main.go` 时，Go 程序的工作目录是 `print/`（当前 shell 所在目录），相对路径 `dist/templates/*` 就去找 `print/dist/templates/`——这个目录不存在。
+
+**解决：**
+
+```bash
+cd 项目目录 && go run main.go    # 先 cd 进去
+```
+
+或者直接 F5 —— `${fileDirname}` 自动处理工作目录。
+
+---
+
+### 问题 7：端口 8080 被占
+
+好几个项目都用 8080，每次切换项目要先关掉旧的：
+
+```powershell
+# 查看谁占了 8080
+netstat -ano | findstr :8080
+# 杀掉对应 PID
+taskkill /F /PID 进程号
+```
+
+---
+
+## 环境变量优先级链（总图）
+
+```
+launch.json "env": {...}        ← 最高优先级（仅 F5 启动时）
+       │
+       ▼ 没设或终端启动
+终端 $env:XXX = "..."           ← 当前 PowerShell 会话
+       │
+       ▼ 没设
+系统环境变量 [Environment]::Set     ← 永久生效
+       │
+       ▼ 没设
+代码中的默认值                    ← 最低优先级
+```
+
+**排查口诀：** 先查 `os.Getenv()` 实际读到了什么值，再往下排查。
+
+---
+
+## 关键语法
+
+### `r.Static(relativePath, root)` — 静态文件目录
+
+```go
+r.Static("/static", "dist/static")
+//         ↑ URL 前缀    ↑ 本地目录
+```
+
+浏览器请求 `/static/css/app.css` → Gin 读 `dist/static/css/app.css`。
+
+### `r.StaticFile(relativePath, filepath)` — 单个静态文件
+
+```go
+r.StaticFile("/favicon.ico", "dist/templates/favicon.ico")
+```
+
+### `r.LoadHTMLGlob(pattern)` — 加载模板
+
+```go
+r.LoadHTMLGlob("dist/templates/*")  // 加载目录下所有文件
+```
+
+### `c.HTML(code, name, data)` — 渲染模板
+
+```go
+c.HTML(http.StatusOK, "index.html", nil)
+```
+
+---
+
+## 新建项目 checklist
+
+以后每加一个项目，按这个清单逐项确认：
+
+- [ ] `package main`（不是文件夹名）
+- [ ] `os.Getenv("DB_项目名_DSN")`（独立命名，不共用 `DB_DSN`）
+- [ ] launch.json 的 `env` 里补一行（注意逗号）
+- [ ] launch.json 逗号语法正确
+- [ ] `r.Static` 的 URL 路径和 HTML 里引用的一致
+- [ ] `r.Static` 的本地目录有 `dist/` 前缀（如果文件在 dist 里）
+- [ ] 按 F5 启动，而不是终端 `go run`
+- [ ] 端口是否被占
