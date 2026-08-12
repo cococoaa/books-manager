@@ -249,6 +249,50 @@ c.HTML(http.StatusOK, "index.html", nil)
 
 ---
 
+## PowerShell `$env:` 和 launch.json `env` 的区别
+
+### 问题：第二行 `$env:DB_TODOLIST_DSN = "..."` 是在配置环境变量吗？
+
+**是的。** `$env:XXX = "值"` 就是在当前 PowerShell 终端设置环境变量。
+
+```powershell
+$env:DB_TODOLIST_DSN = "root:Zsh1314520@tcp(127.0.0.1:3306)/todolist?..."
+#                          └──────────────────────────────────────────┘
+#                                       数据库连接字符串
+
+# 设好之后：
+go run main.go
+# → 程序里 os.Getenv("DB_TODOLIST_DSN") 就能读到这个值
+```
+
+这和 launch.json 里配的 `env` 是一个意思，只是方式不同：
+
+| 方式 | 语法 | 生效范围 |
+|------|------|----------|
+| PowerShell | `$env:XXX = "值"` | 当前终端会话，关掉窗口就没了 |
+| launch.json | `"env": { "XXX": "值" }` | F5 启动时自动注入进程 |
+
+### 为什么推荐 F5 而不是终端？
+
+终端启动需要每次手动敲一遍 `$env:...`，换了窗口就失效。launch.json 配好之后，F5 启动自动注入，一劳永逸。
+
+而且 launch.json 里 `"program": "${fileDirname}"` 会自动把工作目录切到当前文件所在目录，不会出现"在根目录执行导致相对路径找不到文件"的问题。
+
+### F5 启动的原理
+
+```
+你按 F5
+  → VS Code 读取 .vscode/launch.json
+  → 展开 ${fileDirname} = 当前文件所在目录
+  → 注入 "env" 里的所有环境变量 (set DB_TODOLIST_DSN=...)
+  → 在该目录下执行 go build + 运行
+  → 程序 os.Getenv("DB_TODOLIST_DSN") → 读到 launch.json 的值 ✅
+```
+
+整个过程**只在这次启动的进程内生效**，不影响系统其他任何地方，退出程序就没了，干净且不污染。
+
+---
+
 ## 新建项目 checklist
 
 以后每加一个项目，按这个清单逐项确认：
