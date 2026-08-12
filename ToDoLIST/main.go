@@ -116,6 +116,10 @@ func initDB() *gorm.DB {
 	if err != nil {
 		log.Fatal("数据库连接失败: ", err)
 	}
+	// 删除旧版本的 content 列（从 Content 改名 Title 后残留）
+	if db.Migrator().HasColumn(&model.Todo{}, "content") {
+		db.Migrator().DropColumn(&model.Todo{}, "content")
+	}
 	// 自动建表
 	db.AutoMigrate(&model.Todo{})
 	return db

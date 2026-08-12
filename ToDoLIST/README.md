@@ -305,3 +305,199 @@ go run main.go
 - [ ] `r.Static` 的本地目录有 `dist/` 前缀（如果文件在 dist 里）
 - [ ] 按 F5 启动，而不是终端 `go run`
 - [ ] 端口是否被占
+
+---
+
+## 前后端对接问题（本次核心）
+
+### 问题 8：前后端 API 路径不匹配 → 前端所有请求 404
+
+**错误现象：** 前端 `http://localhost:8080/#/` 页面正常显示，但所有的待办操作（添加、删除、修改）都失败。
+
+**前端 JS 中发出的请求：**
+
+```javascript
+GET    /v1/todo          // 获取全部
+POST   /v1/todo          // 新增
+PUT    /v1/todo/:id      // 更新
+DELETE /v1/todo/:id      // 删除
+```
+
+**后端最初的路由：**
+
+```go
+todoroute := r.Group("/todos")    // 匹配 /todos，不是 /v1/todo
+```
+
+**根因：** 这套前端模板是别人的 Vue 项目，API 设计是 `/v1/todo` + `title` + `status`。后端是自己写的 `/todos` + `Content`。两边完全对不上。
+
+**修正：** 统一改为 `/v1/todo`，model 里 `Content` → `Title`，加 `Status bool` 字段。
+
+---
+
+### 问题 9：JSON 字段名不匹配 → 前端拿到数据但渲染不出来
+
+**错误代码：**
+
+```go
+type Todo struct {
+    gorm.Model
+    Content string `gorm:"...;comment:'待办事情内容'"`
+}
+```
+
+**前端发的 JSON：**
+
+```json
+{"title": "打游戏"}
+```
+
+**后端期望的 JSON：**
+
+```json
+{"Content": "打游戏"}
+```
+
+前端传 `title`，后端等 `Content`，Gin 的 `ShouldBindJSON` 解析不到值，存进数据库的是空字符串。
+
+**修正：**
+
+```go
+Title string `gorm:"...;comment:'待办事情内容'" json:"title"`
+```
+
+---
+
+### 问题 10：GET 返回 Response 包装对象 → el-table 渲染为空
+
+**错误代码：**
+
+```go
+func QueryALLTodo(c *gin.Context) {
+    todos, _ := dao.GetAllTodo()
+    success(c, todos)    // → {"code":0,"msg":"success","data":[...]}
+}
+```
+
+**前端代码：**
+
+```javascript
+this.axios.get("/v1/todo").then(function(t) {
+    return e.tableData = t.data    // t.data 是 {code:0, msg:"success", data:[...]}
+})
+```
+
+el-table 期望 `tableData` 是数组 `[{...}, {...}]`，但 `t.data` 是整个 Response 对象，不是数组。el-table 不会报错，但一行都渲染不出来。
+
+**修正：**
+
+```go
+func QueryALLTodo(c *gin.Context) {
+    todos, _ := dao.GetAllTodo()
+    c.JSON(http.StatusOK, todos)   // 直接返回裸数组
+}
+```
+
+---
+
+### 问题 11：gorm.Model 字段无 json tag → 前端调 `row.id` 拿到 undefined
+
+**现象：** 待办列表能显示了，但点击删除按钮没反应。
+
+**排查：** 后端返回的 JSON：
+
+```json
+{"ID":1, "CreatedAt":"...", "UpdatedAt":"..."}
+//  ↑ 大写的 ID，JSON 里是大写
+```
+
+前端 JS 调的是：
+
+```javascript
+handleDelete: function(e, t) {
+    this.axios.delete("/v1/todo/" + t)   // t = row.id
+    //                               ↑ 小写 id
+}
+```
+
+JavaScript 严格区分大小写：`row.id` 去匹配 `"ID"` → `undefined` → 发送 `DELETE /v1/todo/undefined` → 400 错误。
+
+**修正：** 不用 `gorm.Model`，自己定义每个字段并加 json tag：
+
+```go
+type Todo struct {
+    ID        uint           `gorm:"primaryKey" json:"id"`         // id 小写
+    CreatedAt time.Time      `json:"created_at"`                   // 蛇形
+    UpdatedAt time.Time      `json:"updated_at"`
+    DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`              // 隐藏
+    Title     string         `gorm:"not null;comment:'待办事情内容'" json:"title"`
+    Status    bool           `gorm:"not null;default:false;comment:'是否完成'" json:"status"`
+}
+```
+
+**对比：**
+
+| | gorm.Model（之前） | 自定义字段 + json tag（之后） |
+|---|---|---|
+| JSON 输出 | `"ID":1` | `"id":1` |
+| 前端 `row.id` | `undefined` | `1` ✅ |
+| 删除按钮 | 失效 | 正常 |
+
+---
+
+### 问题 12：AutoMigrate 只加列不删列 → Error 1364
+
+**错误日志：**
+
+```
+Error 1364 (HY000): Field 'content' doesn't have a default value
+INSERT INTO `todos` (`created_at`,`updated_at`,`deleted_at`,`title`,`status`)
+VALUES ('2026-08-12 21:02:26',...,NULL,'打游戏',false)
+```
+
+**根因追踪：**
+
+```
+第一版 model:  Content string → AutoMigrate 建表: id, content, ...
+第二版 model:  Title  string → AutoMigrate 行为: 保留 content 列 + 新增 title 列
+               
+新 INSERT: INSERT INTO todos (title) VALUES ('打游戏')
+           → content 列 NOT NULL 且无默认值 → MySQL 拒绝 → Error 1364
+```
+
+**AutoMigrate 的核心设计：**
+- ✅ 新增列
+- ✅ 修改列类型/约束
+- ✅ 新增索引
+- ❌ **从不删列**（怕数据丢失）
+- ❌ 从不改列名（认为是"删旧列 + 加新列"）
+
+改字段名 = 残留旧列。社区推荐的生产环境做法是手写 SQL 迁移脚本。
+
+**修正：** 在 `initDB` 的 `AutoMigrate` 之前加清理逻辑：
+
+```go
+// 删除旧版本的 content 列（从 Content 改名 Title 后残留）
+if db.Migrator().HasColumn(&model.Todo{}, "content") {
+    db.Migrator().DropColumn(&model.Todo{}, "content")
+}
+// 然后再建表
+db.AutoMigrate(&model.Todo{})
+```
+
+---
+
+### 前后端对接总结
+
+**前端模板里硬编码了三样东西，后端每一个都得对上：**
+
+| 前端期望 | 后端第一版 | 后端最终版 | 
+|----------|-----------|-----------|
+| URL 路径 | `/todos` ❌ | `/v1/todo` ✅ |
+| JSON 字段名 | `Content` ❌ | `Title` → `"title"` ✅ |
+| 状态字段 | 无 ❌ | `Status` → `"status"` ✅ |
+| 返回格式 | `{code, msg, data}` ❌ | 裸数组 `[...]` ✅ |
+| ID 字段 JSON | `"ID"` ❌ | `"id"` ✅ |
+| 旧列 content | 残留 ❌ | 启动时自动删 ✅ |
+
+
