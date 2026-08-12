@@ -78,7 +78,7 @@ func DeleteTodo(c *gin.Context) {
 		return
 	}
 	if err := dao.DeleteTodo(id); err != nil {
-		Fail(c, 500, "删除图书失败: "+err.Error())
+		Fail(c, 500, "删除待办失败: "+err.Error())
 		return
 	}
 	success(c, nil)
@@ -99,7 +99,8 @@ func RenewTodo(c *gin.Context) {
 		Fail(c, 400, "参数错误: "+err.Error())
 		return
 	}
-	todo.Content = req.Content
+	todo.Title = req.Title
+	todo.Status = req.Status
 	if err := dao.UpdateTodo(todo); err != nil {
 		Fail(c, 500, "更新待办信息失败: "+err.Error())
 		return
@@ -136,7 +137,7 @@ func main() {
 	r.GET("/", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "index.html", nil)
 	})
-	todoroute := r.Group("/todos")
+	todoroute := r.Group("/v1/todo")
 	{
 		todoroute.POST("", CreateTodo)
 		todoroute.PUT("/:id", RenewTodo)

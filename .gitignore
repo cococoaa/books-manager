@@ -1,1 +1,8 @@
 .vscode/
+
+# 二进制文件
+*.exe
+*.test
+
+# Go 编译产物
+__debug_bin*
