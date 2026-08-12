@@ -60,12 +60,12 @@ func QueryTodo(c *gin.Context) {
 	success(c, Todo)
 }
 func QueryALLTodo(c *gin.Context) {
-	ToDoLIST, err := dao.GetAllTodo()
+	todos, err := dao.GetAllTodo()
 	if err != nil {
 		Fail(c, 500, "查询待办列表失败: "+err.Error())
 		return
 	}
-	success(c, ToDoLIST)
+	c.JSON(http.StatusOK, todos)
 }
 func DeleteTodo(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
