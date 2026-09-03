@@ -39,3 +39,15 @@ func UpdateStudent(student *model.Student) error {
 func DeleteStudentByID(ID int) error {
 	return db.Where("id=?", ID).Delete(&model.Student{}).Error
 }
+
+// 创建用户
+func CreateUser(user *model.User) error {
+	return db.Create(user).Error
+}
+
+// 根据用户名查询用户
+func GetUserByUsername(username string) (*model.User, error) {
+	var u model.User
+	err := db.Where("username = ?", username).First(&u).Error
+	return &u, err
+}

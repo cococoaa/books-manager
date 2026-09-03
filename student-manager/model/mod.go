@@ -19,3 +19,10 @@ type gezi struct {
 	English int `json:"english"`
 	Physics int `json:"physics"`
 }
+
+// 用户（用于登录鉴权）
+type User struct {
+	gorm.Model
+	Username string `gorm:"type:varchar(64);not null;uniqueIndex;comment:'用户名'" json:"username"`
+	Password string `gorm:"type:varchar(255);not null;comment:'密码'" json:"-"`
+}

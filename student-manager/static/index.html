@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学生管理系统</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, "Microsoft YaHei", sans-serif;
+            background: #f5f7fa;
+            color: #333;
+            min-height: 100vh;
+        }
+        .container { max-width: 900px; margin: 0 auto; padding: 24px; }
+        .card {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        h1 { font-size: 22px; margin-bottom: 16px; }
+        h2 { font-size: 16px; margin-bottom: 12px; color: #555; }
+        .row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+        input {
+            flex: 1;
+            padding: 10px 12px;
+            border: 1px solid #dcdfe6;
+            border-radius: 4px;
+            font-size: 14px;
+            outline: none;
+            min-width: 120px;
+        }
+        input:focus { border-color: #409eff; }
+        button {
+            padding: 10px 20px;
+            background: #409eff;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        button:hover { background: #66b1ff; }
+        button.secondary { background: #909399; }
+        button.danger { background: #f56c6c; }
+        .msg { font-size: 14px; margin: 8px 0; min-height: 20px; }
+        .msg.ok { color: #67c23a; }
+        .msg.err { color: #f56c6c; }
+        table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #ebeef5; font-size: 14px; }
+        th { background: #fafafa; color: #666; font-weight: 600; }
+        .hidden { display: none; }
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .user-info { font-size: 14px; color: #666; }
+        .tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1px solid #ebeef5; }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            color: #666;
+            border-bottom: 2px solid transparent;
+            font-size: 15px;
+        }
+        .tab.active { color: #409eff; border-bottom-color: #409eff; font-weight: 600; }
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .tag.token { background: #f0f9eb; color: #67c23a; word-break: break-all; }
+        .token-box {
+            background: #f8f9fb;
+            border: 1px dashed #dcdfe6;
+            border-radius: 4px;
+            padding: 12px;
+            font-size: 12px;
+            color: #888;
+            word-break: break-all;
+            margin: 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 登录/注册页 -->
+        <div id="auth-page" class="card">
+            <h1>📚 学生管理系统</h1>
+            <div class="tabs">
+                <div class="tab active" onclick="switchTab('login')">登录</div>
+                <div class="tab" onclick="switchTab('register')">注册</div>
+            </div>
+            <div id="login-form">
+                <div class="row"><input id="login-username" placeholder="用户名"></div>
+                <div class="row"><input id="login-password" type="password" placeholder="密码"></div>
+                <div class="row"><button onclick="doLogin()">登录</button></div>
+            </div>
+            <div id="register-form" class="hidden">
+                <div class="row"><input id="reg-username" placeholder="用户名"></div>
+                <div class="row"><input id="reg-password" type="password" placeholder="密码"></div>
+                <div class="row"><button onclick="doRegister()">注册</button></div>
+            </div>
+            <div id="auth-msg" class="msg"></div>
+        </div>
+
+        <!-- 学生管理页 -->
+        <div id="main-page" class="hidden">
+            <div class="card">
+                <div class="topbar">
+                    <h1>📚 学生管理</h1>
+                    <div class="user-info">
+                        当前用户：<strong id="current-user"></strong>
+                        <button class="secondary" style="margin-left:12px;" onclick="logout()">退出登录</button>
+                    </div>
+                </div>
+                <div class="token-box">Token：<span id="token-display"></span></div>
+            </div>
+
+            <div class="card">
+                <h2>新增学生</h2>
+                <div class="row">
+                    <input id="stu-name" placeholder="姓名">
+                    <input id="stu-age" type="number" placeholder="年龄">
+                </div>
+                <div class="row">
+                    <input id="stu-yuwen" type="number" placeholder="语文">
+                    <input id="stu-math" type="number" placeholder="数学">
+                    <input id="stu-english" type="number" placeholder="英语">
+                    <input id="stu-physics" type="number" placeholder="物理">
+                </div>
+                <div class="row"><button onclick="addStudent()">添加学生</button></div>
+                <div id="add-msg" class="msg"></div>
+            </div>
+
+            <div class="card">
+                <h2>学生列表</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>姓名</th>
+                            <th>年龄</th>
+                            <th>语文</th>
+                            <th>数学</th>
+                            <th>英语</th>
+                            <th>物理</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stu-list"></tbody>
+                </table>
+                <div id="list-msg" class="msg"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let token = localStorage.getItem('token') || '';
+        let currentUser = localStorage.getItem('username') || '';
+
+        // 如果已有 token，直接进主页面
+        if (token) {
+            enterMain();
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach((el, i) => {
+                el.classList.toggle('active', (tab === 'login' ? i === 0 : i === 1));
+            });
+            document.getElementById('login-form').classList.toggle('hidden', tab !== 'login');
+            document.getElementById('register-form').classList.toggle('hidden', tab !== 'register');
+            document.getElementById('auth-msg').textContent = '';
+        }
+
+        async function doRegister() {
+            const username = document.getElementById('reg-username').value.trim();
+            const password = document.getElementById('reg-password').value;
+            const msg = document.getElementById('auth-msg');
+            if (!username || !password) { msg.textContent = '用户名和密码不能为空'; msg.className = 'msg err'; return; }
+            const res = await fetch('/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+                msg.textContent = '注册成功，请登录';
+                msg.className = 'msg ok';
+                switchTab('login');
+            } else {
+                msg.textContent = data.msg;
+                msg.className = 'msg err';
+            }
+        }
+
+        async function doLogin() {
+            const username = document.getElementById('login-username').value.trim();
+            const password = document.getElementById('login-password').value;
+            const msg = document.getElementById('auth-msg');
+            if (!username || !password) { msg.textContent = '用户名和密码不能为空'; msg.className = 'msg err'; return; }
+            const res = await fetch('/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+                token = data.data.token;
+                currentUser = username;
+                localStorage.setItem('token', token);
+                localStorage.setItem('username', username);
+                msg.textContent = '登录成功';
+                msg.className = 'msg ok';
+                enterMain();
+            } else {
+                msg.textContent = data.msg;
+                msg.className = 'msg err';
+            }
+        }
+
+        function enterMain() {
+            document.getElementById('auth-page').classList.add('hidden');
+            document.getElementById('main-page').classList.remove('hidden');
+            document.getElementById('current-user').textContent = currentUser;
+            document.getElementById('token-display').textContent = token;
+            loadStudents();
+        }
+
+        function logout() {
+            token = '';
+            currentUser = '';
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            document.getElementById('main-page').classList.add('hidden');
+            document.getElementById('auth-page').classList.remove('hidden');
+        }
+
+        async function addStudent() {
+            const name = document.getElementById('stu-name').value.trim();
+            const age = parseInt(document.getElementById('stu-age').value);
+            const score = {
+                yuwen: parseInt(document.getElementById('stu-yuwen').value || 0),
+                math: parseInt(document.getElementById('stu-math').value || 0),
+                english: parseInt(document.getElementById('stu-english').value || 0),
+                physics: parseInt(document.getElementById('stu-physics').value || 0)
+            };
+            const msg = document.getElementById('add-msg');
+            if (!name || !age) { msg.textContent = '姓名和年龄必填'; msg.className = 'msg err'; return; }
+
+            const res = await fetch('/students', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ name, age, score })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+                msg.textContent = '添加成功';
+                msg.className = 'msg ok';
+                loadStudents();
+            } else {
+                msg.textContent = data.msg;
+                msg.className = 'msg err';
+            }
+        }
+
+        async function loadStudents() {
+            const list = document.getElementById('stu-list');
+            const msg = document.getElementById('list-msg');
+            const res = await fetch('/students', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            const data = await res.json();
+            if (data.code !== 0) {
+                msg.textContent = data.msg + '（token 可能已过期，请重新登录）';
+                msg.className = 'msg err';
+                list.innerHTML = '';
+                return;
+            }
+            const students = data.data || [];
+            list.innerHTML = students.map(s => `
+                <tr>
+                    <td>${s.ID}</td>
+                    <td>${s.Name}</td>
+                    <td>${s.Age}</td>
+                    <td>${s.Score.yuwen}</td>
+                    <td>${s.Score.math}</td>
+                    <td>${s.Score.english}</td>
+                    <td>${s.Score.physics}</td>
+                    <td><button class="danger" onclick="deleteStudent(${s.ID})">删除</button></td>
+                </tr>
+            `).join('');
+        }
+
+        async function deleteStudent(id) {
+            const res = await fetch('/students/' + id, {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+                loadStudents();
+            } else {
+                alert(data.msg);
+            }
+        }
+    </script>
+</body>
+</html>
