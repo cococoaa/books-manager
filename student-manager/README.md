@@ -140,6 +140,81 @@ launch.json env > 终端 $env:XXX > 系统环境变量 > 代码默认值
 
 本项目使用自增 ID + `c.Param("id")`。
 
+## JWT 登录功能遇到的问题
+
+### 12. User 表字段类型错误：string 默认映射成 longtext
+
+**错误信息**：
+
+```
+Error 1170 (42000): BLOB/TEXT column 'username' used in key specification without a key length
+```
+
+**根因**：Go 的 `string` 字段如果没写 `gorm:"type:..."`，GORM 默认映射成 `longtext` 类型。而 `longtext` 不能直接作为唯一索引（`uniqueIndex`）的键，MySQL 拒绝建表。
+
+**解决**：给字符串字段显式指定 `type:varchar(长度)`：
+
+```go
+Username string `gorm:"type:varchar(64);not null;uniqueIndex;comment:'用户名'" json:"username"`
+Password string `gorm:"type:varchar(255);not null;comment:'密码'" json:"-"`
+```
+
+> 经验：凡是加 `uniqueIndex` 或 `index` 的字符串字段，都要写 `type:varchar(...)`，不能用默认的 longtext。
+
+### 13. 新增学生失败：time 字段零值问题
+
+**错误信息**：
+
+```
+Error 1292 (22007): Incorrect datetime value: '0000-00-00' for column 'time'
+```
+
+**根因**：`Student.Time` 字段是 `time.Time` 类型且标注 `not null`。前端新增学生时没传 `time`，GORM 用零值 `0000-00-00` 插入，MySQL 的 datetime 类型不接受这个值。
+
+**解决（两步）**：
+
+1. model 里去掉 `not null`，加 json tag：
+
+```go
+Time  time.Time `gorm:"comment:'录入时间'" json:"time"`
+```
+
+2. create handler 里判断零值，自动填当前时间：
+
+```go
+if req.Time.IsZero() {
+    req.Time = time.Now()
+}
+```
+
+> 经验：`time.Time` 字段若允许空，去掉 `not null`；若语义是"创建/录入时间"，服务端自动生成，别让前端传。
+
+### 14. 残留 __debug_bin 进程占用端口
+
+**现象**：改了代码、重启服务，但接口行为还是旧的，报错依旧。
+
+**根因**：按 F5 调试时，VS Code 会启动 `__debug_bin.exe` 进程。调试结束（点停止/重启 VS Code）后，这个进程有时不会自动退出，继续占着 8080 端口。之后 `go run` 新代码要么启动失败（端口被占），要么你以为重启了其实还在请求旧进程。
+
+**排查**：
+
+```powershell
+# 查端口被谁占
+Get-NetTCPConnection -LocalPort 8080 | Select-Object OwningProcess
+# 看进程名
+Get-Process -Id <PID> | Select-Object ProcessName
+# 看到 __debug_bin 就是残留调试进程，杀掉
+taskkill /F /PID <PID>
+```
+
+> 经验：改了代码不生效，先查端口是不是被 `__debug_bin` 残留进程占了，杀干净再启动。
+
+## JWT 登录功能说明
+
+- **注册** `POST /register`：用户名 + 密码，bcrypt 加密后存库
+- **登录** `POST /login`：校验密码，返回 JWT token（24 小时有效）
+- **鉴权中间件**：`/students` 所有接口需带 `Authorization: Bearer <token>`
+- **前端** `static/index.html`：登录/注册 + 学生增删查界面，token 存 localStorage
+
 ## 项目结构（仓库级）
 
 ```

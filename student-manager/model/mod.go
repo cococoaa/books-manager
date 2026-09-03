@@ -11,7 +11,7 @@ type Student struct {
 	Name  string    `gorm:"not null;comment:'学生姓名'"`
 	Age   int       `gorm:"not null;comment:'学生年龄'"`
 	Score gezi      `gorm:"serializer:json;comment:'学生分数'" json:"score"`
-	Time  time.Time `gorm:"not null;comment:'录入时间'"`
+	Time  time.Time `gorm:"comment:'录入时间'" json:"time"`
 }
 type gezi struct {
 	Yuwen   int `json:"yuwen"`

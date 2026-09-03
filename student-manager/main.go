@@ -49,6 +49,10 @@ func create(c *gin.Context) {
 		Fail(c, 400, "参数校验失败: "+err.Error())
 		return
 	}
+	// 录入时间由服务端自动生成，前端没传时默认当前时间
+	if req.Time.IsZero() {
+		req.Time = time.Now()
+	}
 	if err := dao.CreateStudent(&req); err != nil {
 		Fail(c, 500, "新增学生失败: "+err.Error())
 		return
